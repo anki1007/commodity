@@ -568,7 +568,10 @@ function getD9(lon){
   const st=[0,9,6,3,0,9,6,3,0,9,6,3];
   return(st[s]+p)%12;
 }
-function houseOf(pLon,ascLon){return(Math.floor(n360(pLon-ascLon)/30)%12)+1;}
+// राशि (whole-sign) भाव — उत्तर भारतीय लग्न-कुण्डली: भाव = ग्रह-राशि − लग्न-राशि ।
+// (पूर्व में equal-house from ascendant degree था → लग्न-अंश 22° से पहले बैठे ग्रह एक
+//  भाव पीछे दिखते थे, e.g. गुरु कर्क→मिथुन; अब राशि व भाव परस्पर संगत हैं ।)
+function houseOf(pLon,ascLon){return(((Math.floor(n360(pLon)/30)-Math.floor(n360(ascLon)/30))%12)+12)%12+1;}
 
 // ═══════════════════════════════════════════════════════════════════
 // व्यापार रत्न — SARVATOBHADRA CHAKRA ENGINE (book-exact)
@@ -769,9 +772,11 @@ const VR_NAK_FX=[
 // ── ग्रह-मैत्री (नैसर्गिक, book chakra L611-626) ───────────────────
 const VR_FRIENDS={Sun:['Moon','Mars','Jupiter'],Moon:['Sun','Mercury'],Mars:['Sun','Moon','Jupiter'],
  Mercury:['Sun','Venus'],Jupiter:['Sun','Moon','Mars'],Venus:['Mercury','Saturn'],Saturn:['Mercury','Venus'],
- Rahu:['Mercury','Venus','Saturn'],Ketu:['Mars','Venus','Saturn']};
+ Rahu:['Ketu'],Ketu:['Rahu']};  // नरपति-ज्योतिषांग (पृ.385): राहु-केतु परस्पर मित्र, अन्य सर्व शत्रु, सम कोई नहीं
 const VR_ENEMIES={Sun:['Venus','Saturn'],Moon:[],Mars:['Mercury'],Mercury:['Moon'],Jupiter:['Mercury','Venus'],
- Venus:['Sun','Moon'],Saturn:['Sun','Moon','Mars'],Rahu:['Sun','Moon','Mars'],Ketu:['Sun','Moon']};
+ Venus:['Sun','Moon'],Saturn:['Sun','Moon','Mars'],
+ Rahu:['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn'],
+ Ketu:['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn']};
 function vrRelation(a,b){ // relation of planet a towards b
   if(a===b)return'swami';
   if((VR_FRIENDS[a]||[]).includes(b))return'mitra';
@@ -885,18 +890,104 @@ function vrDrishtiPada(name,fromSign,toSign,d9Sign){
   return 0;
 }
 
-// ── सौम्य / क्रूर (book L645-647) ──────────────────────────────────
+// ── सौम्य / क्रूर — अर्घकाण्ड नियम (SBC Vyapar Ratna पृ.394) ─────────
+// सौम्य = बुध, गुरु, शुक्र, चन्द्र (चार) ।  क्रूर = सूर्य, मंगल, शनि, राहु, केतु (पाँच) ।
+// "इस अर्घकाण्ड में पापयुक्त बुध तथा क्षीण चन्द्र भी कभी पाप नहीं होते" — अतः चारों
+// सौम्य सदैव सौम्य ही रहते हैं (विंशोपक संतुलन हेतु: सौम्य-पूर्ण 20, क्रूर-पूर्ण 20) ।
+// चन्द्र का शुक्ल/कृष्ण शुभ-पाप पृथक् 'अर्थ-निरूपण' स्तर पर vrMoonPhase() में देखा जाता है ।
 function vrSaumya(name,tithi,d9Sign,allP){
   if(name==='Sun'||name==='Mars'||name==='Saturn'||name==='Rahu'||name==='Ketu')return false;
-  if(name==='Moon')return!(tithi>=26||tithi<=5); // क्षीण चन्द्र क्रूर
-  if(name==='Mercury'){
-    for(const q of allP){
-      if(['Sun','Mars','Saturn','Rahu','Ketu'].includes(q.name)&&q.d9Sign===d9Sign)return false;
-    }
-    return true;
-  }
-  return true; // गुरु, शुक्र
+  return true; // चन्द्र, बुध, गुरु, शुक्र — अर्घकाण्ड में सदैव सौम्य
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// अर्थ-निरूपण "KEY" इंजन — SBC Vyapar Ratna (अर्थ-निरूपण पृ.448-461;
+// त्रय-अधिपति पृ.380-382; विंशोपक पृ.394-395) — audit-pass additions.
+// ═══════════════════════════════════════════════════════════════════
+
+// चन्द्र शुभ/पाप तिथि-वश (Key श्लोक 7): शुक्ल6–कृष्ण10 शुभ; कृष्ण11–शुक्ल5 पाप
+function vrMoonPhase(tithi){
+  const benefic=(tithi>=6&&tithi<=25);
+  return{benefic,label:benefic?'शुभ चन्द्र (शुक्ल ६–कृष्ण १०)':'पाप चन्द्र (कृष्ण ११–शुक्ल ५)'};
+}
+
+// चन्द्र शृंगोन्नति — स्वतः गणित (आकाश-ज्यामिति; Key श्लोक 5-7,10-11,20) ।
+// वाम शृंग उन्नत → मंदी ; दक्षिण शृंग उन्नत → तेजी ।  सूर्य-चन्द्र की क्रान्ति,
+// उज्ज्वल-कोर दिक्कोण (χ) व चन्द्र-नतकोण (q) से उन्नत शृंग की गणना ।
+function vrShringonnati(sunLonTrop,moonLonTrop,moonLat,eps,latDeg,lstDeg){
+  const D2R=Math.PI/180,R2D=180/Math.PI;
+  const sl=sunLonTrop*D2R,ml=moonLonTrop*D2R,bm=(moonLat||0)*D2R,e=eps*D2R,phi=latDeg*D2R;
+  const aS=Math.atan2(Math.sin(sl)*Math.cos(e),Math.cos(sl));
+  const dS=Math.asin(Math.sin(e)*Math.sin(sl));
+  const aM=Math.atan2(Math.sin(ml)*Math.cos(e)-Math.tan(bm)*Math.sin(e),Math.cos(ml));
+  const dM=Math.asin(Math.sin(bm)*Math.cos(e)+Math.cos(bm)*Math.sin(e)*Math.sin(ml));
+  const da=aS-aM;
+  const chi=Math.atan2(Math.cos(dS)*Math.sin(da),Math.sin(dS)*Math.cos(dM)-Math.cos(dS)*Math.sin(dM)*Math.cos(da));
+  const H=(lstDeg*D2R)-aM;
+  const q=Math.atan2(Math.sin(H),Math.tan(phi)*Math.cos(dM)-Math.sin(dM)*Math.cos(H));
+  const psi=chi-q;
+  const wrap=a=>{a=((a+Math.PI)%(2*Math.PI));if(a<0)a+=2*Math.PI;return a-Math.PI;};
+  const c1=wrap(psi+Math.PI/2),c2=wrap(psi-Math.PI/2);
+  const thetaUp=Math.abs(c1)<Math.abs(c2)?c1:c2;
+  const strength=Math.abs(Math.cos(thetaUp));
+  const elong=Math.acos(Math.max(-1,Math.min(1,Math.cos(sl-ml))));
+  const illum=(1-Math.cos(elong))/2;
+  const dakshina=thetaUp>0;  // प्रेक्षक-वाम उन्नत ⇒ चन्द्र-दक्षिण शृंग (देव-सम्मुख संवत)
+  return{illum,tiltDeg:+(thetaUp*R2D).toFixed(1),strength:+strength.toFixed(3),
+    horn:dakshina?'दक्षिण':'वाम',side:dakshina?'right':'left',
+    effect:dakshina?1:-1,computed:true};
+}
+
+// ग्रह-त्रय अधिपति: देश-त्रय / काल-त्रय / पण्य-त्रय (पृ.380-382)
+const VR_TRIADS={
+  desha:{region:['Rahu','Saturn','Jupiter'],mandala:['Ketu','Sun','Venus'],sthana:['Moon','Mars','Mercury']},
+  kala:{varsha:['Rahu','Ketu','Saturn','Jupiter'],masa:['Mars','Sun','Mercury','Venus'],dina:['Moon']},
+  panya:{dhatu:['Saturn','Rahu','Mars'],jiva:['Mercury','Moon','Jupiter'],mula:['Ketu','Venus','Sun']}};
+const VR_GENDER={Rahu:'पुं',Ketu:'पुं',Sun:'पुं',Jupiter:'पुं',Mars:'पुं',Venus:'स्त्री',Moon:'स्त्री',Saturn:'नपुं',Mercury:'नपुं'};
+function vrPanyaClass(cat){ // वस्तु-स्वभाव → धातु/जीव/मूल
+  if(cat.some(c=>['metal','gem'].includes(c)))return'dhatu';
+  if(cat.some(c=>['animal'].includes(c)))return'jiva';
+  if(cat.some(c=>['grain','herb','spice','sugar','oil','ras','cotton','resin','salt','kirana'].includes(c)))return'mula';
+  return'dhatu';}
+const VR_PANYA_H={dhatu:'धातु',jiva:'जीव',mula:'मूल'};
+function vrTriads(balaOf,panyaCat){
+  const S=arr=>arr.reduce((a,b)=>(balaOf[a]||0)>=(balaOf[b]||0)?a:b);
+  const pc=vrPanyaClass(panyaCat);
+  return{region:S(VR_TRIADS.desha.region),mandala:S(VR_TRIADS.desha.mandala),sthana:S(VR_TRIADS.desha.sthana),
+    varsha:S(VR_TRIADS.kala.varsha),masa:S(VR_TRIADS.kala.masa),dina:'Moon',
+    panyaClass:pc,panyaClassH:VR_PANYA_H[pc],panya:S(VR_TRIADS.panya[pc])};}
+
+// विंशोपक (20-अंक स्वच्छ गणना; पृ.394-395): 4 सौम्य पूर्ण=5; 5 क्रूर पूर्ण=4;
+// × (विद्ध-अंग/5) × (दृष्टि-पाद/4) — सौम्य व क्रूर दोनों की पूर्णता 20 ।
+function vrVimshopaka(perPlanet){
+  let s=0,k=0;
+  for(const q of perPlanet){
+    if(!(q.L>0&&q.dp>0))continue;
+    const v=(q.saum?5:4)*(q.L/5)*(q.dp/4);
+    if(q.saum)s+=v;else k+=v;}
+  s=Math.min(s,20);k=Math.min(k,20);
+  return{saumya:+s.toFixed(2),krura:+k.toFixed(2),net:+(s-k).toFixed(2)};}
+
+// सम/विषम मूल्य-अवस्था व अवधि-सारिणी (Key श्लोक 17-20)
+function vrEvenOdd(price){
+  if(price==null||isNaN(price))return null;
+  const r=Math.floor(price);
+  return{value:r,parity:r%2===0?'सम (even)':'विषम (odd)',even:r%2===0};}
+const VR_DURATION_TABLE=[{flip:1,days:1},{flip:2,days:3},{flip:3,days:7},{flip:4,days:15}];
+
+// अर्थ-निरूपण संश्लेषण (Key श्लोक 7-21): वेध-नेट + शृंगोन्नति + संयोग/विभेद पूर्ण/अर्ध
+function vrArthaNirupana(baseNet,shring,moonPhase){
+  const shEffect=shring?shring.effect*shring.strength*(moonPhase&&!moonPhase.benefic?-1:1):0;
+  let agree='—',factor=1;
+  if(shring){
+    const bd=Math.sign(baseNet),sd=Math.sign(shEffect);
+    if(bd===0){agree='वेध-तटस्थ → शृंगोन्नति प्रधान';factor=0.6;}
+    else if(sd===bd){agree='संयोग — पूर्ण फल';factor=1;}
+    else{agree='विभेद — अर्ध/शून्य फल';factor=0.5;}}
+  const finalNet=(baseNet+2*shEffect)*factor;
+  const verdict=finalNet>0.4?'TEJI':finalNet<-0.4?'MANDI':'NEUTRAL';
+  return{base:+baseNet.toFixed(2),shEffect:+shEffect.toFixed(2),agree,factor,
+    finalNet:+finalNet.toFixed(2),verdict};}
 
 // ── MAIN: full vedha analysis for one commodity at given positions ──
 // pls: [{name,lon,retro,speed,s(sign),d9Sign}], tithi (1..30)
@@ -932,9 +1023,16 @@ function vrAnalyse(comKey,pls,tithi){
       if(ray.land)landNaks.push(ray.land);
       rays.push({planet:p.name,dir:d,pts:ray.pts,motion});
     }
-    // कोण वेध — corner vowels (gati-nirapeksha)
-    const konas=KONA_VEDHA.filter(k=>k.i28===pos.i28&&k.pada===pos.pada).map(k=>k.cell);
-    konas.forEach(c=>hitCells.add(c));
+    // कोण वेध (पृ.366-368, दामोदर-मत): अन्त्य-पाद(4) मार्गी ग्रह से, आद्य-पाद(1)
+    // वक्री ग्रह से कोण-स्वर का वेध; पूर्णा-तिथि का वेध दोनों (मार्गी+वक्री) से ।
+    let konas=[];
+    const konaMatch=KONA_VEDHA.filter(k=>k.i28===pos.i28&&k.pada===pos.pada);
+    if(konaMatch.length){
+      const isVakri=motion==='वक्री';
+      const vowelOK=(pos.pada===4&&!isVakri)||(pos.pada===1&&isVakri);
+      if(vowelOK){konas=konaMatch.map(k=>k.cell);konas.forEach(c=>hitCells.add(c));}
+      hitCells.add(TITHI_CELL['पूर्णा']);   // पूर्णा-तिथि — मार्गी व वक्री दोनों से
+    }
     // limb hits for this commodity
     const hits={varna:false,svara:false,tithi:false,nak:false,rashi:false};
     if(hitCells.has(PAN.cell))hits.varna=true;
@@ -969,7 +1067,10 @@ function vrAnalyse(comKey,pls,tithi){
     if(rel2){const saum=vrSaumya(p.name,tithi,p.d9Sign,nine);
       nakFx.push({planet:p.name,nak:VR28[pos.i28],fx,saum});}
   }
-  return{swami,sthanaSwami,dinaSwami,panyaSwami,virgoLord,balaOf,teji,mandi,net,verdict,perPlanet,rays,nakFx,hitNakPl,tithi,shukla};
+  const moonPhase=vrMoonPhase(tithi);
+  const triads=vrTriads(balaOf,PAN.cat);
+  const vimsho=vrVimshopaka(perPlanet);
+  return{swami,sthanaSwami,dinaSwami,panyaSwami,virgoLord,balaOf,teji,mandi,net,verdict,perPlanet,rays,nakFx,hitNakPl,tithi,shukla,moonPhase,triads,vimsho};
 }
 
 // ── tithi from sun/moon lons ───────────────────────────────────────
@@ -1374,6 +1475,14 @@ function computeAll(dateStr,timeIST,ayMode){
   let vr=null;
   try{vr=vrAnalyse(S.selectedCom,planets,tithi);}
   catch(e){console.error('VR analyse:',e);}
+  // ── चन्द्र शृंगोन्नति (स्वतः) + अर्थ-निरूपण संश्लेषण ──
+  if(vr){try{
+    const epsS=trueObliquity(J), nodeT=rahuLon(J), mlT=moonLon(J);
+    const mLat=5.13*Math.sin(toR(n360(mlT-nodeT)));   // सन्निकट चन्द्र-शर
+    const lstD=computeAsc(J).lst;
+    vr.shring=vrShringonnati(sunLon(J),mlT,mLat,epsS,LAT,lstD);
+    vr.artha=vrArthaNirupana(vr.net,vr.shring,vr.moonPhase);
+  }catch(e){console.error('VR shring/artha:',e);}}
 
   return{J,ay,ayMode,ascSid,ascSign,ascSub,ascNak,mcSid,planets,dayLord,moon,rp,
     rMin,sMin,hlMin,phpHours,slots,bias,dateStr,timeIST,tithi,vr,
@@ -2907,6 +3016,55 @@ function tSBC(){
       <div style="color:var(--tx3)">दिशा: ${f.fx.dir} · अवधि: ${f.fx.days?f.fx.days+' दिन':'अनुक्त'}</div>
     </div>`).join(''):'<span style="font-size:12px;color:var(--tx3)">—</span>';
 
+  // ── अर्थ-निरूपण "KEY" पैनल (शृंगोन्नति · त्रय-अधिपति · विंशोपक · सम/विषम) ──
+  const eo=vrEvenOdd(price);
+  const SH=VR?VR.shring:null, AR=VR?VR.artha:null, MP=VR?VR.moonPhase:null, TR=VR?VR.triads:null, VM=VR?VR.vimsho:null;
+  const planetChip=p=>`<strong style="color:${PC[p]||'var(--tx1)'}">${PA[p]||p}</strong>`;
+  const aCls=AR?(AR.verdict==='TEJI'?'pb-b':AR.verdict==='MANDI'?'pb-r':'pb-n'):'pb-n';
+  const aTxt=AR?(AR.verdict==='TEJI'?'तेजी TEJI (BULLISH)':AR.verdict==='MANDI'?'मंदी MANDI (BEARISH)':'सम NEUTRAL'):'—';
+  const arthaHTML=(VR&&AR&&SH)?`
+  <div class="pnl">
+    <div class="ph"><span class="dot"></span>अर्थ-निरूपण — सर्वतोभद्र-चक्र की कुंजी (SBC Vyapar Ratna पृ.448-461) · ${com.n.toUpperCase()} (${PAN.hindi})</div>
+    <div class="pb">
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <span class="pill ${aCls}" style="font-size:15px;padding:5px 18px">${aTxt} ${AR.finalNet>=0?'+':''}${AR.finalNet} विश्वा</span>
+        <span style="font-size:12px;color:var(--tx2)">वेध-आधार: <strong style="color:${AR.base>=0?'var(--bear)':'var(--bull)'}">${AR.base>=0?'+':''}${AR.base}</strong> · शृंगोन्नति: <strong style="color:${AR.shEffect>=0?'var(--bear)':'var(--bull)'}">${AR.shEffect>=0?'+':''}${AR.shEffect}</strong> · ${AR.agree} (×${AR.factor})</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:10px">
+        <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:4px;padding:9px">
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:4px">चन्द्र शृंगोन्नति (स्वतः गणित)</div>
+          <div style="font-size:13px;color:var(--tx1)">उन्नत शृंग: <strong style="color:${SH.side==='right'?'var(--bear)':'var(--bull)'}">${SH.horn} → ${SH.side==='right'?'तेजी':'मंदी'}</strong></div>
+          <div style="font-size:12px;color:var(--tx2);margin-top:3px">प्रदीप्ति ${(SH.illum*100).toFixed(0)}% · नति ${SH.tiltDeg}° · प्रबलता ${(SH.strength*100).toFixed(0)}%</div>
+          <div style="font-size:12px;color:var(--tx2);margin-top:3px">${MP?MP.label:''}</div>
+          <div style="font-size:10px;color:var(--tx3);margin-top:4px">⚠ आकाश-ज्यामिति गणित — पंचांग शृंगोन्नति से मिलान करें (पृ.453)</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:4px;padding:9px">
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:4px">ग्रह-त्रय अधिपति (पृ.380-382)</div>
+          <div style="font-size:12px;color:var(--tx2);line-height:1.85">
+            देश-त्रय: ${planetChip(TR.region)} / ${planetChip(TR.mandala)} / ${planetChip(TR.sthana)} <span style="color:var(--tx3)">(देश/मण्डल/स्थान)</span><br>
+            काल-त्रय: ${planetChip(TR.varsha)} / ${planetChip(TR.masa)} / ${planetChip(TR.dina)} <span style="color:var(--tx3)">(वर्ष/मास/दिन)</span><br>
+            पण्य-त्रय: ${planetChip(TR.panya)} <span style="color:var(--tx3)">(${TR.panyaClassH}-अधिपति)</span>
+          </div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:4px;padding:9px">
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:4px">विंशोपक-फल (20 अंक; पृ.394)</div>
+          <div style="font-size:13px;color:var(--tx1)">सौम्य (मंदी): <strong style="color:var(--bull)">${VM.saumya}/20</strong></div>
+          <div style="font-size:13px;color:var(--tx1)">क्रूर (तेजी): <strong style="color:var(--bear)">${VM.krura}/20</strong></div>
+          <div style="font-size:12px;color:var(--tx2);margin-top:3px">नेट: <strong style="color:${VM.net>=0?'var(--bear)':'var(--bull)'}">${VM.net>=0?'+':''}${VM.net}</strong> ${VM.net>0?'(तेजी-प्रवण)':VM.net<0?'(मंदी-प्रवण)':'(सम)'}</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:4px;padding:9px">
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:4px">सम/विषम मूल्य-अवधि (श्लोक 17-20)</div>
+          ${eo?`<div style="font-size:13px;color:var(--tx1)">वर्तमान भाव ${eo.value} → <strong>${eo.parity}</strong></div>`:'<div style="font-size:12px;color:var(--tx3)">भाव अनुपलब्ध</div>'}
+          <div style="font-size:11px;color:var(--tx2);margin-top:4px">पलटाव → अवधि: 1=१दिन · 2=३दिन · 3=७दिन · 4=१५दिन</div>
+          <div style="font-size:10px;color:var(--tx3);margin-top:3px">पूर्ण अवधि हेतु बहु-दिवसीय सम/विषम क्रम आवश्यक</div>
+        </div>
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:var(--tx3);line-height:1.5">
+        "वामोन्नतौ समर्घत्वं मन्दार्घत्वं ततोऽन्यथा" (श्लोक 20): वाम शृंग उन्नत → मंदी, दक्षिण उन्नत → तेजी । शृंगोन्नति व वेध-दिशा संयोग → पूर्ण फल; विभेद → अर्ध/शून्य फल । "सर्वेषामेव खेटानां चन्द्र एव बलप्रदः" (श्लोक 5) ।
+      </div>
+    </div>
+  </div>`:'';
+
   return`
 <div style="display:flex;flex-direction:column;gap:10px">
   <div class="pnl">
@@ -2921,6 +3079,8 @@ function tSBC(){
       </div>
     </div>
   </div>
+
+  ${arthaHTML}
 
   ${heatHTML}
 
